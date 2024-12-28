@@ -6,12 +6,22 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <optional>
+#include <vector>
 
-bool sendHeader(int client_fd, uint32_t correlationId) {
+struct RequestHeader {
+    uint16_t request_api_key;
+    uint16_t request_api_version;
+    uint32_t correlation_id;
+    std::optional<std::string> client_id;
+    std::vector<uint8_t> tag_buffer;
+};
+
+bool sendHeader(int client_fd, uint32_t correlation_id) {
     uint bufferSize = sizeof(int32_t) + sizeof(uint32_t);
     char buffer[bufferSize];
 
-    uint32_t header = htonl(correlationId);
+    uint32_t header = htonl(correlation_id);
     uint32_t headerSize = htonl(sizeof(header));
     memset(buffer, 0, sizeof(buffer));
     memcpy(buffer, &headerSize, sizeof(headerSize));
@@ -77,7 +87,11 @@ int main(int argc, char* argv[]) {
     // Uncomment this block to pass the first stage
     int client_fd = accept(server_fd, reinterpret_cast<struct sockaddr*>(&client_addr), &client_addr_len);
     std::cout << "Client connected\n";
-    sendHeader(client_fd, 7);
+
+    RequestHeader request_header;
+
+    recv(client_fd, &request_header, sizeof(request_header), 0);
+    sendHeader(client_fd, request_header.correlation_id);
 
     close(client_fd);
     close(server_fd);
