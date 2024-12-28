@@ -1,12 +1,32 @@
-#include <cstdlib>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <netdb.h>
-#include <string>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+
+bool sendHeader(int client_fd, uint32_t correlationId) {
+    uint bufferSize = sizeof(int32_t) + sizeof(uint32_t);
+    char buffer[bufferSize];
+
+    uint32_t header = htonl(correlationId);
+    uint32_t headerSize = htonl(sizeof(header));
+    memset(buffer, 0, sizeof(buffer));
+    memcpy(buffer, &headerSize, sizeof(headerSize));
+    memcpy(buffer + sizeof(int32_t), &header, sizeof(uint32_t));
+
+    auto bytesSent = send(client_fd, &buffer, bufferSize, 0);
+
+    if (bytesSent != sizeof(buffer)) {
+        std::cerr << "Failed to send header" << std::endl;
+        return false;
+    } else {
+        std::cout << "Sent " << bytesSent << " bytes " << std::endl;
+    }
+    return true;
+}
 
 int main(int argc, char* argv[]) {
     // Disable output buffering
@@ -57,8 +77,9 @@ int main(int argc, char* argv[]) {
     // Uncomment this block to pass the first stage
     int client_fd = accept(server_fd, reinterpret_cast<struct sockaddr*>(&client_addr), &client_addr_len);
     std::cout << "Client connected\n";
-    close(client_fd);
+    sendHeader(client_fd, 7);
 
+    close(client_fd);
     close(server_fd);
     return 0;
 }
