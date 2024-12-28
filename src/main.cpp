@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -23,14 +24,22 @@ struct RequestHeader {
     }
 };
 
-bool sendHeader(int client_fd, uint32_t correlation_id) {
-    uint bufferSize = sizeof(int32_t) + sizeof(uint32_t);
+struct ErrorResponse {
+    uint16_t error_code;
+};
+
+bool sendHeader(int client_fd, uint32_t correlation_id, void* additional_data, size_t additional_data_size) {
+    uint bufferSize = sizeof(int32_t) + sizeof(uint32_t) + additional_data_size;
     char buffer[bufferSize];
 
     uint32_t header = htonl(correlation_id);
     uint32_t headerSize = htonl(sizeof(header));
     memset(buffer, 0, sizeof(buffer));
     memcpy(buffer, &headerSize, sizeof(headerSize));
+    memcpy(buffer + sizeof(int32_t), &header, sizeof(uint32_t));
+    if (additional_data_size > 0) {
+        memcpy(buffer + sizeof(int32_t) + sizeof(uint32_t), additional_data, additional_data_size);
+    }
     memcpy(buffer + sizeof(int32_t), &header, sizeof(uint32_t));
 
     auto bytesSent = send(client_fd, &buffer, bufferSize, 0);
@@ -96,6 +105,7 @@ int main(int argc, char* argv[]) {
 
     uint32_t message_size;
     RequestHeader request_header;
+    ErrorResponse error_response = {htons(35)};
 
     recv(client_fd, &message_size, sizeof(message_size), 0);
     recv(client_fd, &request_header, ntohl(message_size), 0);
@@ -104,7 +114,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Correlation ID: " << request_header.correlation_id << std::endl;
     std::cout << "Request API Key: " << request_header.request_api_key << std::endl;
     std::cout << "Request API Version: " << request_header.request_api_version << std::endl;
-    sendHeader(client_fd, request_header.correlation_id);
+    sendHeader(client_fd, request_header.correlation_id, &error_response, sizeof(error_response));
 
     close(client_fd);
     close(server_fd);
