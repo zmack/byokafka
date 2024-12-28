@@ -15,6 +15,12 @@ struct RequestHeader {
     uint32_t correlation_id;
     std::optional<std::string> client_id;
     std::vector<uint8_t> tag_buffer;
+
+    void to_host_order() {
+        request_api_key = ntohs(request_api_key);
+        request_api_version = ntohs(request_api_version);
+        correlation_id = ntohl(correlation_id);
+    }
 };
 
 bool sendHeader(int client_fd, uint32_t correlation_id) {
@@ -88,9 +94,16 @@ int main(int argc, char* argv[]) {
     int client_fd = accept(server_fd, reinterpret_cast<struct sockaddr*>(&client_addr), &client_addr_len);
     std::cout << "Client connected\n";
 
+    uint32_t message_size;
     RequestHeader request_header;
 
-    recv(client_fd, &request_header, sizeof(request_header), 0);
+    recv(client_fd, &message_size, sizeof(message_size), 0);
+    recv(client_fd, &request_header, ntohl(message_size), 0);
+    request_header.to_host_order();
+    std::cout << sizeof(request_header) << std::endl;
+    std::cout << "Correlation ID: " << request_header.correlation_id << std::endl;
+    std::cout << "Request API Key: " << request_header.request_api_key << std::endl;
+    std::cout << "Request API Version: " << request_header.request_api_version << std::endl;
     sendHeader(client_fd, request_header.correlation_id);
 
     close(client_fd);
