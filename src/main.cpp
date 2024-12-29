@@ -19,6 +19,35 @@ class Serializable {
         virtual ~Serializable() = default;
 };
 
+class NetworkBuffer {
+    std::vector<uint8_t> buffer;
+
+    public:
+        NetworkBuffer(size_t size) {
+            buffer.reserve(size);
+        }
+
+        size_t push_back(uint16_t value) {
+            auto network_order = htons(value);
+            buffer.push_back((value >> 8) & 0xFF);
+            buffer.push_back(value & 0xFF);
+            return 1;
+        }
+
+        size_t push_back(uint32_t value) {
+            auto network_order = htons(value);
+            buffer.push_back((value >> 24) & 0xFF);
+            buffer.push_back((value >> 16) & 0xFF);
+            buffer.push_back((value >> 8) & 0xFF);
+            buffer.push_back(value & 0xFF);
+            return 1;
+        }
+
+        std::vector<uint8_t> get() {
+            return buffer;
+        }
+};
+
 struct RequestHeader {
     uint16_t request_api_key;
     uint16_t request_api_version;
@@ -54,13 +83,21 @@ public:
     error_code(error_code), throttle_time_ms(throttle_time_ms), api_keys({}) {}
 
     std::vector<uint8_t> serialize() const override {
-        std::vector<uint8_t> buffer;
-        buffer.reserve(sizeof(error_code) + sizeof(throttle_time_ms));
+        auto versions = APIVersionsV4APIKeys{18, 4, 4};
+
+        auto buffer = NetworkBuffer{
+            sizeof(error_code) +
+            sizeof(uint32_t) +
+            sizeof(versions) +
+            sizeof(throttle_time_ms)
+        };
         buffer.push_back(htons(error_code));
-        buffer.push_back(htons(1));
-        buffer.push_back(htons(0));
+        buffer.push_back(htonl(1));
+        buffer.push_back(htons(versions.api_key));
+        buffer.push_back(htons(versions.min_version));
+        buffer.push_back(htons(versions.max_version));
         buffer.push_back(htonl(throttle_time_ms));
-        return buffer;
+        return buffer.get();
     }
 
     void deserialize(std::span<const std::byte> buffer) override {
