@@ -1,13 +1,14 @@
+#include <arpa/inet.h>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <netdb.h>
-#include <unistd.h>
-#include <arpa/inet.h>
+#include <optional>
+#include <span>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <optional>
+#include <unistd.h>
 #include <vector>
 
 struct RequestHeader {
@@ -28,8 +29,20 @@ struct ErrorResponse {
     uint16_t error_code;
 };
 
-bool sendHeader(int client_fd, uint32_t correlation_id, void* additional_data, size_t additional_data_size) {
-    uint bufferSize = sizeof(int32_t) + sizeof(uint32_t) + additional_data_size;
+struct APIVersionsV4APIKeys {
+    uint16_t api_key;
+    uint16_t min_version;
+    uint16_t max_version;
+};
+
+struct APIVersionsResponseV4 {
+    uint16_t error_code;
+    std::vector<APIVersionsV4APIKeys> api_keys;
+    uint32_t throttle_time_ms;
+};
+
+bool sendHeader(int client_fd, uint32_t correlation_id, std::span<const std::byte> additional_data) {
+    uint bufferSize = sizeof(int32_t) + sizeof(uint32_t) + additional_data.size();
     char buffer[bufferSize];
 
     uint32_t header = htonl(correlation_id);
@@ -37,8 +50,8 @@ bool sendHeader(int client_fd, uint32_t correlation_id, void* additional_data, s
     memset(buffer, 0, sizeof(buffer));
     memcpy(buffer, &headerSize, sizeof(headerSize));
     memcpy(buffer + sizeof(int32_t), &header, sizeof(uint32_t));
-    if (additional_data_size > 0) {
-        memcpy(buffer + sizeof(int32_t) + sizeof(uint32_t), additional_data, additional_data_size);
+    if (!additional_data.empty()) {
+        memcpy(buffer + sizeof(int32_t) + sizeof(uint32_t), additional_data.data(), additional_data.size());
     }
     memcpy(buffer + sizeof(int32_t), &header, sizeof(uint32_t));
 
@@ -110,11 +123,17 @@ int main(int argc, char* argv[]) {
     recv(client_fd, &message_size, sizeof(message_size), 0);
     recv(client_fd, &request_header, ntohl(message_size), 0);
     request_header.to_host_order();
+
     std::cout << sizeof(request_header) << std::endl;
     std::cout << "Correlation ID: " << request_header.correlation_id << std::endl;
     std::cout << "Request API Key: " << request_header.request_api_key << std::endl;
     std::cout << "Request API Version: " << request_header.request_api_version << std::endl;
-    sendHeader(client_fd, request_header.correlation_id, &error_response, sizeof(error_response));
+
+    auto response = std::span<const std::byte>(
+        reinterpret_cast<const std::byte*>(&error_response),
+        sizeof(error_response)
+    );
+    sendHeader(client_fd, request_header.correlation_id, response);
 
     close(client_fd);
     close(server_fd);
