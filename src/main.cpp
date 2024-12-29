@@ -29,17 +29,17 @@ class NetworkBuffer {
 
         size_t push_back(uint16_t value) {
             auto network_order = htons(value);
-            buffer.push_back((value >> 8) & 0xFF);
-            buffer.push_back(value & 0xFF);
+            buffer.push_back((network_order >> 8) & 0xFF);
+            buffer.push_back(network_order & 0xFF);
             return 1;
         }
 
         size_t push_back(uint32_t value) {
-            auto network_order = htons(value);
-            buffer.push_back((value >> 24) & 0xFF);
-            buffer.push_back((value >> 16) & 0xFF);
-            buffer.push_back((value >> 8) & 0xFF);
-            buffer.push_back(value & 0xFF);
+            auto network_order = htonl(value);
+            buffer.push_back((network_order >> 24) & 0xFF);
+            buffer.push_back((network_order >> 16) & 0xFF);
+            buffer.push_back((network_order >> 8) & 0xFF);
+            buffer.push_back(network_order & 0xFF);
             return 1;
         }
 
