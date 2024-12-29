@@ -11,6 +11,13 @@
 #include <unistd.h>
 #include <vector>
 
+class Serializable {
+    public:
+        virtual std::vector<uint8_t> serialize() const = 0;
+        virtual void deserialize(std::span<const std::byte> buffer) = 0;
+        virtual ~Serializable() = default;
+};
+
 struct RequestHeader {
     uint16_t request_api_key;
     uint16_t request_api_version;
@@ -35,10 +42,26 @@ struct APIVersionsV4APIKeys {
     uint16_t max_version;
 };
 
-struct APIVersionsResponseV4 {
+class APIVersionsResponseV4 : public Serializable {
     uint16_t error_code;
     std::vector<APIVersionsV4APIKeys> api_keys;
     uint32_t throttle_time_ms;
+
+public:
+    APIVersionsResponseV4(uint16_t error_code,
+        uint32_t throttle_time_ms):
+    error_code(error_code), throttle_time_ms(throttle_time_ms), api_keys({}) {}
+
+    std::vector<uint8_t> serialize() const override {
+        std::vector<uint8_t> buffer;
+        buffer.reserve(sizeof(error_code) + sizeof(throttle_time_ms));
+        buffer.push_back(htons(error_code));
+        buffer.push_back(htonl(throttle_time_ms));
+        return buffer;
+    }
+
+    void deserialize(std::span<const std::byte> buffer) override {
+    }
 };
 
 bool sendHeader(int client_fd, uint32_t correlation_id, std::span<const std::byte> additional_data) {
@@ -64,6 +87,34 @@ bool sendHeader(int client_fd, uint32_t correlation_id, std::span<const std::byt
         std::cout << "Sent " << bytesSent << " bytes " << std::endl;
     }
     return true;
+}
+
+std::span<const std::byte> generateResponse(const RequestHeader& request_header) {
+    std::cout << "Generating response for " << request_header.request_api_key << std::endl;
+
+    if (request_header.request_api_key == 18) {
+        auto api_versions_response = std::make_shared<APIVersionsResponseV4>(
+            APIVersionsResponseV4{0, 0}
+        );
+
+        auto serialized_response = api_versions_response->serialize();
+
+        auto response = std::span<const std::byte>(
+            reinterpret_cast<const std::byte*>(&serialized_response),
+            sizeof(serialized_response)
+        );
+
+        return response;
+    } else {
+        auto error_response = std::make_shared<ErrorResponse>(ErrorResponse{htons(35)});
+
+        auto response = std::span<const std::byte>(
+            reinterpret_cast<const std::byte*>(&error_response),
+            sizeof(error_response)
+        );
+
+        return response;
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -118,7 +169,6 @@ int main(int argc, char* argv[]) {
 
     uint32_t message_size;
     RequestHeader request_header;
-    ErrorResponse error_response = {htons(35)};
 
     recv(client_fd, &message_size, sizeof(message_size), 0);
     recv(client_fd, &request_header, ntohl(message_size), 0);
@@ -129,10 +179,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Request API Key: " << request_header.request_api_key << std::endl;
     std::cout << "Request API Version: " << request_header.request_api_version << std::endl;
 
-    auto response = std::span<const std::byte>(
-        reinterpret_cast<const std::byte*>(&error_response),
-        sizeof(error_response)
-    );
+    auto response = generateResponse(request_header);
     sendHeader(client_fd, request_header.correlation_id, response);
 
     close(client_fd);
