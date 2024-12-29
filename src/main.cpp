@@ -57,7 +57,7 @@ public:
         std::vector<uint8_t> buffer;
         buffer.reserve(sizeof(error_code) + sizeof(throttle_time_ms));
         buffer.push_back(htons(error_code));
-        buffer.push_back(htons(0));
+        buffer.push_back(htons(1));
         buffer.push_back(htons(0));
         buffer.push_back(htonl(throttle_time_ms));
         return buffer;
