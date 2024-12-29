@@ -84,6 +84,8 @@ public:
 
     std::vector<uint8_t> serialize() const override {
         auto versions = APIVersionsV4APIKeys{18, 4, 4};
+        std::cout << "Serializing error_code(" << versions.api_key << ")"
+                << " throttle(" << throttle_time_ms << ")" << std::endl;
 
         auto buffer = NetworkBuffer{
             sizeof(error_code) +
@@ -91,12 +93,12 @@ public:
             sizeof(versions) +
             sizeof(throttle_time_ms)
         };
-        buffer.push_back(htons(error_code));
-        buffer.push_back(htonl(1));
-        buffer.push_back(htons(versions.api_key));
-        buffer.push_back(htons(versions.min_version));
-        buffer.push_back(htons(versions.max_version));
-        buffer.push_back(htonl(throttle_time_ms));
+        buffer.push_back(error_code);
+        buffer.push_back((uint32_t) 1);
+        buffer.push_back(versions.api_key);
+        buffer.push_back(versions.min_version);
+        buffer.push_back(versions.max_version);
+        buffer.push_back(throttle_time_ms);
         return buffer.get();
     }
 
@@ -134,7 +136,7 @@ std::span<const std::byte> generateResponse(const RequestHeader& request_header)
 
     if (request_header.request_api_key == 18) {
         auto api_versions_response = std::make_shared<APIVersionsResponseV4>(
-            APIVersionsResponseV4{0, 0}
+            APIVersionsResponseV4{3, 10}
         );
 
         auto serialized_response = api_versions_response->serialize();
