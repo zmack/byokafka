@@ -47,7 +47,7 @@ class NetworkBuffer {
             for (auto byte : buffer) {
                 std::cout << std::hex << (int) byte << " ";
             }
-            std::cout << std::endl;
+            std::cout << std::dec << std::endl;
         }
 };
 
@@ -81,8 +81,7 @@ class APIVersionsResponseV4 : public Serializable {
     uint32_t throttle_time_ms;
 
 public:
-    APIVersionsResponseV4(uint16_t error_code,
-        uint32_t throttle_time_ms):
+    APIVersionsResponseV4(uint16_t error_code, uint32_t throttle_time_ms):
     error_code(error_code), throttle_time_ms(throttle_time_ms), api_keys({}) {}
 
     std::vector<uint8_t> serialize() const override {
