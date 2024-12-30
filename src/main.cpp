@@ -110,9 +110,11 @@ bool sendHeader(int client_fd, uint32_t correlation_id, const std::vector<uint8_
     char buffer[bufferSize];
 
     uint32_t c_id = htonl(correlation_id);
-    uint32_t headerSize = htonl(sizeof(c_id));
+    uint32_t headerSize = htonl(bufferSize - sizeof(int32_t));
+    std::cout << "Header size: " << headerSize << std::endl;
 
     memset(buffer, 0, sizeof(buffer));
+
     memcpy(buffer, &headerSize, sizeof(headerSize));
     memcpy(buffer + sizeof(int32_t), &c_id, sizeof(uint32_t));
 
