@@ -15,7 +15,6 @@
 class Serializable {
     public:
         virtual std::vector<uint8_t> serialize() const = 0;
-        virtual void deserialize(std::span<const uint8_t> buffer) = 0;
         virtual ~Serializable() = default;
 };
 
@@ -44,6 +43,19 @@ class NetworkBuffer {
             return sizeof(uint32_t);
         }
 
+        size_t push_back_varlong(uint32_t value) {
+            auto n = value;
+            do {
+                unsigned char c = n & 0x7F;
+                if ((n >>= 7) > 0) {
+                    c |= 0x80;
+                }
+                buffer.push_back(c);
+            } while (n > 0);
+
+            return sizeof(value);
+        }
+
         const std::vector<uint8_t> get() const {
             return buffer;
         }
@@ -70,8 +82,17 @@ struct RequestHeader {
     }
 };
 
-struct ErrorResponse {
+class ErrorResponse : public Serializable {
     uint16_t error_code;
+
+public:
+    ErrorResponse(uint16_t error_code): error_code(error_code) {}
+
+    std::vector<uint8_t> serialize() const override {
+        auto buffer = NetworkBuffer{};
+        buffer.push_back(error_code);
+        return buffer.get();
+    }
 };
 
 struct APIVersionsV4APIKeys {
@@ -87,7 +108,7 @@ class APIVersionsResponseV4 : public Serializable {
 
 public:
     APIVersionsResponseV4(uint16_t error_code, uint32_t throttle_time_ms):
-    error_code(error_code), throttle_time_ms(throttle_time_ms), api_keys({}) {}
+        error_code(error_code), throttle_time_ms(throttle_time_ms), api_keys({}) {}
 
     std::vector<uint8_t> serialize() const override {
         auto versions = APIVersionsV4APIKeys{18, 4, 4};
@@ -96,17 +117,15 @@ public:
 
         auto buffer = NetworkBuffer{};
         buffer.push_back(error_code);
-        buffer.push_back((uint32_t) 2);
+        buffer.push_back_varlong((uint32_t) 2);
         buffer.push_back(versions.api_key);
         buffer.push_back(versions.min_version);
         buffer.push_back(versions.max_version);
+        buffer.push_back((uint8_t) 0);
         buffer.push_back(throttle_time_ms);
         buffer.push_back((uint8_t) 0);
         buffer.inspect();
         return buffer.get();
-    }
-
-    void deserialize(std::span<const uint8_t> buffer) override {
     }
 };
 
@@ -141,9 +160,9 @@ bool sendHeader(int client_fd, uint32_t correlation_id, const std::vector<uint8_
 std::vector<uint8_t> generateResponse(const RequestHeader& request_header) {
     std::cout << "Generating response for " << request_header.request_api_key << std::endl;
 
-    if (request_header.request_api_key == 18) {
+    if (request_header.request_api_key == 18 && request_header.request_api_version <= 4) {
         auto api_versions_response = std::make_shared<APIVersionsResponseV4>(
-            APIVersionsResponseV4{0, 0}
+            APIVersionsResponseV4{0, 13}
         );
 
         auto serialized_response = api_versions_response->serialize();
@@ -152,9 +171,9 @@ std::vector<uint8_t> generateResponse(const RequestHeader& request_header) {
 
         return serialized_response;
     } else {
-        auto error_response = std::make_shared<ErrorResponse>(ErrorResponse{htons(35)});
+        auto error_response = std::make_shared<ErrorResponse>(ErrorResponse{35});
 
-        auto response = std::vector<uint8_t>{};
+        auto response = error_response->serialize();
         return response;
     }
 }
