@@ -137,7 +137,7 @@ std::vector<uint8_t> generateResponse(const RequestHeader& request_header) {
 
     if (request_header.request_api_key == 18) {
         auto api_versions_response = std::make_shared<APIVersionsResponseV4>(
-            APIVersionsResponseV4{0, 10}
+            APIVersionsResponseV4{0, 0}
         );
 
         auto serialized_response = api_versions_response->serialize();
