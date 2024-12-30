@@ -15,7 +15,7 @@
 class Serializable {
     public:
         virtual std::vector<uint8_t> serialize() const = 0;
-        virtual void deserialize(std::span<const std::byte> buffer) = 0;
+        virtual void deserialize(std::span<const uint8_t> buffer) = 0;
         virtual ~Serializable() = default;
 };
 
@@ -23,28 +23,31 @@ class NetworkBuffer {
     std::vector<uint8_t> buffer;
 
     public:
-        NetworkBuffer(size_t size) {
-            buffer.reserve(size);
-        }
+        NetworkBuffer(): buffer() {}
 
         size_t push_back(uint16_t value) {
             auto network_order = htons(value);
-            buffer.push_back((network_order >> 8) & 0xFF);
-            buffer.push_back(network_order & 0xFF);
-            return 1;
+            const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&network_order);
+            buffer.insert(buffer.end(), bytes, bytes + sizeof(uint16_t));
+            return sizeof(uint16_t);
         }
 
         size_t push_back(uint32_t value) {
             auto network_order = htonl(value);
-            buffer.push_back((network_order >> 24) & 0xFF);
-            buffer.push_back((network_order >> 16) & 0xFF);
-            buffer.push_back((network_order >> 8) & 0xFF);
-            buffer.push_back(network_order & 0xFF);
-            return 1;
+            const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&network_order);
+            buffer.insert(buffer.end(), bytes, bytes + sizeof(uint32_t));
+            return sizeof(uint32_t);
         }
 
-        std::vector<uint8_t> get() {
+        const std::vector<uint8_t> get() const {
             return buffer;
+        }
+
+        void inspect() {
+            for (auto byte : buffer) {
+                std::cout << std::hex << (int) byte << " ";
+            }
+            std::cout << std::endl;
         }
 };
 
@@ -87,38 +90,35 @@ public:
         std::cout << "Serializing error_code(" << versions.api_key << ")"
                 << " throttle(" << throttle_time_ms << ")" << std::endl;
 
-        auto buffer = NetworkBuffer{
-            sizeof(error_code) +
-            sizeof(uint32_t) +
-            sizeof(versions) +
-            sizeof(throttle_time_ms)
-        };
+        auto buffer = NetworkBuffer{};
         buffer.push_back(error_code);
         buffer.push_back((uint32_t) 1);
         buffer.push_back(versions.api_key);
         buffer.push_back(versions.min_version);
         buffer.push_back(versions.max_version);
         buffer.push_back(throttle_time_ms);
+        buffer.inspect();
         return buffer.get();
     }
 
-    void deserialize(std::span<const std::byte> buffer) override {
+    void deserialize(std::span<const uint8_t> buffer) override {
     }
 };
 
-bool sendHeader(int client_fd, uint32_t correlation_id, std::span<const std::byte> additional_data) {
+bool sendHeader(int client_fd, uint32_t correlation_id, const std::vector<uint8_t> &additional_data) {
     uint bufferSize = sizeof(int32_t) + sizeof(uint32_t) + additional_data.size();
     char buffer[bufferSize];
 
-    uint32_t header = htonl(correlation_id);
-    uint32_t headerSize = htonl(sizeof(header));
+    uint32_t c_id = htonl(correlation_id);
+    uint32_t headerSize = htonl(sizeof(c_id));
+
     memset(buffer, 0, sizeof(buffer));
     memcpy(buffer, &headerSize, sizeof(headerSize));
-    memcpy(buffer + sizeof(int32_t), &header, sizeof(uint32_t));
+    memcpy(buffer + sizeof(int32_t), &c_id, sizeof(uint32_t));
+
     if (!additional_data.empty()) {
         memcpy(buffer + sizeof(int32_t) + sizeof(uint32_t), additional_data.data(), additional_data.size());
     }
-    memcpy(buffer + sizeof(int32_t), &header, sizeof(uint32_t));
 
     auto bytesSent = send(client_fd, &buffer, bufferSize, 0);
 
@@ -131,30 +131,23 @@ bool sendHeader(int client_fd, uint32_t correlation_id, std::span<const std::byt
     return true;
 }
 
-std::span<const std::byte> generateResponse(const RequestHeader& request_header) {
+std::vector<uint8_t> generateResponse(const RequestHeader& request_header) {
     std::cout << "Generating response for " << request_header.request_api_key << std::endl;
 
     if (request_header.request_api_key == 18) {
         auto api_versions_response = std::make_shared<APIVersionsResponseV4>(
-            APIVersionsResponseV4{3, 10}
+            APIVersionsResponseV4{0, 10}
         );
 
         auto serialized_response = api_versions_response->serialize();
 
-        auto response = std::span<const std::byte>(
-            reinterpret_cast<const std::byte*>(&serialized_response),
-            sizeof(serialized_response)
-        );
+        std::cout << "Response size: " << serialized_response.size() << std::endl;
 
-        return response;
+        return serialized_response;
     } else {
         auto error_response = std::make_shared<ErrorResponse>(ErrorResponse{htons(35)});
 
-        auto response = std::span<const std::byte>(
-            reinterpret_cast<const std::byte*>(&error_response),
-            sizeof(error_response)
-        );
-
+        auto response = std::vector<uint8_t>{};
         return response;
     }
 }
@@ -218,10 +211,12 @@ int main(int argc, char* argv[]) {
 
     std::cout << sizeof(request_header) << std::endl;
     std::cout << "Correlation ID: " << request_header.correlation_id << std::endl;
+    std::cout << "Message Client: " << request_header.client_id.value_or("None") << std::endl;
     std::cout << "Request API Key: " << request_header.request_api_key << std::endl;
     std::cout << "Request API Version: " << request_header.request_api_version << std::endl;
 
     auto response = generateResponse(request_header);
+    std::cout << "Response size: " << response.size() << std::endl;
     sendHeader(client_fd, request_header.correlation_id, response);
 
     close(client_fd);
