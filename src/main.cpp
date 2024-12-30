@@ -45,15 +45,17 @@ class NetworkBuffer {
 
         size_t push_back_varlong(uint32_t value) {
             auto n = value;
+            uint8_t bytes = 0;
             do {
                 unsigned char c = n & 0x7F;
                 if ((n >>= 7) > 0) {
                     c |= 0x80;
                 }
                 buffer.push_back(c);
+                bytes++;
             } while (n > 0);
 
-            return sizeof(value);
+            return bytes;
         }
 
         const std::vector<uint8_t> get() const {
