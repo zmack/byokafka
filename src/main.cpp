@@ -94,6 +94,7 @@ public:
         buffer.push_back((uint32_t) 1);
         buffer.push_back(versions.api_key);
         buffer.push_back(versions.min_version);
+        buffer.push_back(versions.max_version);
         buffer.inspect();
         return buffer.get();
     }
